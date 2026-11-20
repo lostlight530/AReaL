@@ -161,8 +161,8 @@ def get_gsm8k_rl_dataset(
 
 ## Custom datasets on disk
 
-The adapters above consume known datasets. If your records are already prepared, none
-of that machinery is needed: build them with `Dataset.from_list()`, persist them with
+The adapters above consume known datasets. If your records are already prepared, none of
+that machinery is needed: build them with `Dataset.from_list()`, persist them with
 `save_to_disk()`, and load them back through `get_custom_dataset()`. Every step below
 runs offline on CPU — no dataset downloads, no model weights, no inference server.
 
@@ -215,8 +215,8 @@ MATH_SAMPLES = [
 ```
 
 The `\boxed{}` instruction in both the prompt and the answer mirrors what the GSM8K
-adapter appends to every question, so the reward function has an unambiguous target
-to extract.
+adapter appends to every question, so the reward function has an unambiguous target to
+extract.
 
 Save the records and read them back through the shared entry point:
 
@@ -235,8 +235,9 @@ Dataset.from_list(MATH_SAMPLES).save_to_disk(str(dataset_dir))
 reloaded = get_custom_dataset(path=str(dataset_dir), type="rl")
 
 assert len(reloaded) == 3
-assert reloaded[0]["messages"] == MATH_SAMPLES[0]["messages"]
-assert reloaded[0]["answer"] == MATH_SAMPLES[0]["answer"]
+for observed, expected in zip(reloaded, MATH_SAMPLES, strict=True):
+    assert observed["messages"] == expected["messages"]
+    assert observed["answer"] == expected["answer"]
 print("columns =", reloaded.column_names)
 print("len     =", len(reloaded))
 ```
@@ -251,33 +252,33 @@ len     = 3
 
 Two details are worth knowing.
 
-The warning is expected. Passing `path` and `type` as keyword arguments takes the
-branch that has no `dataset_config` object, so the loader logs a warning and carries
-on. In a real training config you would set `train_dataset.path` and
-`train_dataset.type` instead, and never see it.
+The warning is expected. Passing `path` and `type` as keyword arguments takes the branch
+that has no `dataset_config` object, so the loader logs a warning and carries on. In a
+real training config you would set `train_dataset.path` and `train_dataset.type`
+instead, and never see it.
 
 The directory name affects dispatch. The loader selects an adapter from substrings in
 the path: `gsm8k`, `geometry3k`, `clevr_count_70k`, `virl39k`, `hh-rlhf`, `torl_data`,
-`dapo-math-17k`, and `swe` as a path token. A directory called `my-gsm8k-copy` would
-be handed to the GSM8K adapter and fail, because that adapter expects a Hub dataset
-name rather than a local directory. `math-rl-demo` is deliberately neutral.
+`dapo-math-17k`, and `swe` as a path token. A directory called `my-gsm8k-copy` would be
+handed to the GSM8K adapter and fail, because that adapter expects a Hub dataset name
+rather than a local directory. `math-rl-demo` is deliberately neutral.
 
-It is equally important that the generic path returns rows exactly as they were
-saved: it does not tokenize, and it does not apply `max_length`. Both are adapter
-behaviours. If you need either, do it yourself before saving, or write an adapter as
-shown in the previous sections.
+It is equally important that the generic path returns rows exactly as they were saved:
+it does not tokenize, and it does not apply `max_length`. Both are adapter behaviours.
+If you need either, do it yourself before saving, or write an adapter as shown in the
+previous sections.
 
 As for how the records reach training: `RLVRWorkflow` passes `data["messages"]` to
 `apply_chat_template` to build the prompt, and spreads the whole row into the reward
-function as keyword arguments. That is why `answer` arrives as a parameter of the
-same name in the GSM8K reward function, where it is compared against the model's
-completion. It is never tokenized and never fed to the model, and any extra field you
-add reaches the reward function the same way.
+function as keyword arguments. That is why `answer` arrives as a parameter of the same
+name in the GSM8K reward function, where it is compared against the model's completion.
+It is never tokenized and never fed to the model, and any extra field you add reaches
+the reward function the same way.
 
 ## Validating prepared data
 
-Before spending GPUs, the same package can check that the shape is what the trainer
-will expect:
+Before spending GPUs, the same package can check that the shape is what the trainer will
+expect:
 
 ```bash
 python -m areal.dataset.validate /tmp/areal-offline-demo-xxxx/math-rl-demo \
@@ -288,8 +289,8 @@ python -m areal.dataset.validate /tmp/areal-offline-demo-xxxx/math-rl-demo \
 checked=3 valid=3 invalid=0
 ```
 
-Besides dataset directories it also accepts JSONL files, which is convenient when
-your preparation script writes lines rather than a saved dataset:
+Besides dataset directories it also accepts JSONL files, which is convenient when your
+preparation script writes lines rather than a saved dataset:
 
 ```bash
 python -m areal.dataset.validate samples.jsonl --profile text-rl --max-errors 5
@@ -302,12 +303,13 @@ python -m areal.dataset.validate samples.jsonl --profile text-rl --max-errors 5
 | `--require-field` | also demand this field exists; repeatable (e.g. `answer`)    |
 | `--max-length`    | reject `tokenized-sft` rows longer than N; that profile only |
 | `--max-errors`    | cap how many diagnostics are printed (default 20)            |
-| `--report`        | write the full result as JSON                                |
+| `--report`        | write JSON to a new file outside the input dataset directory |
 
 Exit code `0` means every row is usable, `1` means at least one row is invalid or the
-input was empty, and `2` means the tool could not read the input at all — a typo in
-the path, a missing split, or an unwritable `--report` target. Diagnostics name the
-location and the field, for example `line 7: messages[1].role [unsupported_role] ...`.
+input was empty, and `2` means the tool could not read the input at all — a typo in the
+path, a missing split, or an existing or unwritable `--report` target. Diagnostics name
+the location and the field, for example
+`line 7: messages[1].role [unsupported_role] ...`.
 
 ## Splitting into train and validation
 
@@ -331,9 +333,9 @@ validation = get_custom_dataset(path=str(split_dir), type="rl", split="validatio
 assert (len(train), len(validation)) == (2, 1)
 ```
 
-Asking for a split that is not there raises `ValueError`. The loader wraps the
-original message behind its own supported-dataset list, so match on substrings
-rather than the whole string:
+Asking for a split that is not there raises `ValueError`. The loader wraps the original
+message behind its own supported-dataset list, so match on substrings rather than the
+whole string:
 
 ```python
 try:
@@ -342,6 +344,8 @@ except ValueError as exc:
     message = str(exc)
     assert "test" in message
     assert "train" in message and "validation" in message
+else:
+    raise AssertionError("Expected ValueError for an unavailable split")
 ```
 
 ```text

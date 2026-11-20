@@ -130,9 +130,7 @@ def test_text_rl_rejects_malformed_record(record, expected_code):
     ],
 )
 def test_tokenized_sft_rejects_malformed_record(record, expected_code):
-    diagnostics = validation.validate_record(
-        record, validation.TOKENIZED_SFT, "row 3"
-    )
+    diagnostics = validation.validate_record(record, validation.TOKENIZED_SFT, "row 3")
 
     assert expected_code in [d.code for d in diagnostics]
     assert all(d.location == "row 3" for d in diagnostics)
@@ -326,9 +324,7 @@ def test_empty_file_exits_with_code_one(tmp_path, capsys):
     assert "checked=0" in out
 
 
-def test_diagnostic_cap_keeps_counting_and_reports_exact_suppression(
-    tmp_path, capsys
-):
+def test_diagnostic_cap_keeps_counting_and_reports_exact_suppression(tmp_path, capsys):
     path = write_jsonl(tmp_path / "bad.jsonl", [{"messages": []} for _ in range(20)])
 
     code, out, _ = run_main(
@@ -419,6 +415,39 @@ def test_unwritable_report_target_exits_with_code_two(tmp_path, capsys):
 
     assert code == 2
     assert "cannot write report" in err
+
+
+@pytest.mark.parametrize("destination", ["source", "hardlink", "existing"])
+def test_report_refuses_to_overwrite_existing_files(tmp_path, capsys, destination):
+    data = write_jsonl(tmp_path / "rl.jsonl", TEXT_RL_ROWS)
+    original = data.read_bytes()
+    target = data if destination == "source" else tmp_path / "report.json"
+    if destination == "hardlink":
+        os.link(data, target)
+    elif destination == "existing":
+        target.write_text("earlier report", encoding="utf-8")
+    before = target.read_bytes()
+
+    code, _, err = run_main(
+        capsys, str(data), "--profile", "text-rl", "--report", str(target)
+    )
+
+    assert code == 2
+    assert "cannot write report" in err
+    assert data.read_bytes() == original
+    assert target.read_bytes() == before
+
+
+def test_report_refuses_new_path_within_input_dataset(tmp_path, capsys):
+    data = save_dataset_dir(tmp_path / "saved", SFT_ROWS)
+    target = data / "report.json"
+    code, _, err = run_main(
+        capsys, str(data), "--profile", "tokenized-sft", "--report", str(target)
+    )
+
+    assert code == 2
+    assert "input dataset directory" in err
+    assert not target.exists()
 
 
 @pytest.mark.parametrize(

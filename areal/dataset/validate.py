@@ -29,10 +29,10 @@ import json
 import os
 import sys
 from collections.abc import Iterable, Sequence
+from pathlib import Path
 
 from areal.dataset.validation import (
     PROFILES,
-    REPORT_SCHEMA_VERSION,
     TOKENIZED_SFT,
     ValidationReport,
     ValidationSession,
@@ -75,13 +75,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--split",
         default=None,
-        help="required when the input is a DatasetDict; ignored otherwise",
+        help="required for a DatasetDict; not accepted for a single dataset",
     )
     parser.add_argument(
         "--report",
         default=None,
         metavar="PATH",
-        help="write the full report as JSON to this path",
+        help="write JSON to a new file outside the input dataset directory",
     )
     parser.add_argument(
         "--require-field",
@@ -138,8 +138,16 @@ def _load_dataset_dir(path: str, split: str | None) -> tuple[Iterable, str | Non
     return loaded, None
 
 
-def _write_report(path: str, report: ValidationReport) -> None:
-    with open(path, "w", encoding="utf-8") as handle:
+def _write_report(
+    path: str, report: ValidationReport, *, input_directory: str | None
+) -> None:
+    if input_directory is not None and Path(path).resolve().is_relative_to(
+        Path(input_directory).resolve()
+    ):
+        raise InputError("choose a path outside the input dataset directory")
+    # Exclusive creation rejects the input file, existing reports, and aliases
+    # to either without truncating any file before it is checked.
+    with open(path, "x", encoding="utf-8") as handle:
         json.dump(report.as_dict(), handle, indent=2, ensure_ascii=False)
         handle.write("\n")
 
@@ -208,8 +216,10 @@ def main(argv: Sequence[str] | None = None) -> int:
 
     if args.report is not None:
         try:
-            _write_report(args.report, report)
-        except OSError as exc:
+            _write_report(
+                args.report, report, input_directory=None if is_jsonl else path
+            )
+        except (OSError, InputError, RuntimeError) as exc:
             print(
                 f"error: cannot write report to {args.report}: {exc}", file=sys.stderr
             )

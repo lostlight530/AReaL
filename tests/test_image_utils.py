@@ -56,6 +56,13 @@ def _pattern_gray(width: int, height: int) -> Image.Image:
     return image
 
 
+def _pixels(image: Image.Image) -> list:
+    """Sample row-major pixels through Pillow's stable public API."""
+    return [
+        image.getpixel((x, y)) for y in range(image.height) for x in range(image.width)
+    ]
+
+
 def _bounding_box_of_non_black(image: Image.Image) -> tuple[int, int, int, int] | None:
     """Inclusive bounding box of pixels that are not pure black, or None."""
     width, height = image.size
@@ -121,7 +128,7 @@ def test_image2base64_preserves_rgb_mode_and_pixels():
     # Assert
     assert decoded.mode == "RGB"
     assert decoded.size == source.size
-    assert list(decoded.getdata()) == list(source.getdata())
+    assert _pixels(decoded) == _pixels(source)
 
 
 def test_image2base64_preserves_rgba_mode_and_pixels():
@@ -134,7 +141,7 @@ def test_image2base64_preserves_rgba_mode_and_pixels():
     # Assert
     assert decoded.mode == "RGBA"
     assert decoded.size == source.size
-    assert list(decoded.getdata()) == list(source.getdata())
+    assert _pixels(decoded) == _pixels(source)
 
 
 def test_image2base64_preserves_grayscale_mode_and_pixels():
@@ -147,21 +154,21 @@ def test_image2base64_preserves_grayscale_mode_and_pixels():
     # Assert
     assert decoded.mode == "L"
     assert decoded.size == source.size
-    assert list(decoded.getdata()) == list(source.getdata())
+    assert _pixels(decoded) == _pixels(source)
 
 
 def test_image2base64_leaves_input_image_unchanged():
     # Arrange
     source = _pattern_rgb(4, 3)
     snapshot_size = source.size
-    snapshot_pixels = list(source.getdata())
+    snapshot_pixels = _pixels(source)
 
     # Act
     image2base64([source, source])
 
     # Assert
     assert source.size == snapshot_size
-    assert list(source.getdata()) == snapshot_pixels
+    assert _pixels(source) == snapshot_pixels
 
 
 # --------------------------------------------------------------------------- #
@@ -179,7 +186,7 @@ def test_pad_images_singleton_returns_same_geometry():
     # Assert
     assert padded.size == (3, 2)
     assert padded.mode == "RGB"
-    assert list(padded.getdata()) == list(source.getdata())
+    assert _pixels(padded) == _pixels(source)
 
 
 def test_pad_images_equal_sizes_are_not_padded():
@@ -192,9 +199,9 @@ def test_pad_images_equal_sizes_are_not_padded():
 
     # Assert
     assert [p.size for p in padded] == [(3, 3), (3, 3)]
-    assert [list(p.getdata()) for p in padded] == [
-        list(first.getdata()),
-        list(second.getdata()),
+    assert [_pixels(p) for p in padded] == [
+        _pixels(first),
+        _pixels(second),
     ]
 
 
@@ -284,15 +291,11 @@ def test_pad_images_leaves_input_images_unchanged():
     # Arrange
     small = _pattern_rgb(2, 2)
     large = _pattern_rgba(5, 5)
-    before = [
-        (image.size, image.mode, list(image.getdata())) for image in (small, large)
-    ]
+    before = [(image.size, image.mode, _pixels(image)) for image in (small, large)]
 
     # Act
     pad_images_batch_to_max_size([small, large])
 
     # Assert
-    after = [
-        (image.size, image.mode, list(image.getdata())) for image in (small, large)
-    ]
+    after = [(image.size, image.mode, _pixels(image)) for image in (small, large)]
     assert after == before

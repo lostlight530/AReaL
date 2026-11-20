@@ -147,12 +147,12 @@ def get_gsm8k_rl_dataset(
 
 ## 本地自定义数据集
 
-前面几节展示的都是内置 adapter 消费已知数据集的方式。如果您的记录已经准备好，这些机制都不是必需的：用
-`Dataset.from_list()` 构造记录，`save_to_disk()` 写入目录，再通过 `get_custom_dataset()` 读回来。以下每一步都在
-CPU 上离线运行——不下载数据集，不加载模型权重，也不启动推理服务
+前面几节展示的都是内置 adapter 消费已知数据集的方式。如果您的记录已经准备好，这些机制都不是必需的：用 `Dataset.from_list()`
+构造记录，`save_to_disk()` 写入目录，再通过 `get_custom_dataset()` 读回来。以下每一步都在 CPU
+上离线运行——不下载数据集，不加载模型权重，也不启动推理服务
 
-对文本强化学习而言，一条记录只需要两样东西：一个构造提示的 `messages` 列表，以及您的奖励函数要消费的字段。下面的示例使用
-`answer` 字段，与 GSM8K adapter 喂给奖励函数的方式一致
+对文本强化学习而言，一条记录只需要两样东西：一个构造提示的 `messages` 列表，以及您的奖励函数要消费的字段。下面的示例使用 `answer` 字段，与 GSM8K
+adapter 喂给奖励函数的方式一致
 
 ```python
 MATH_SAMPLES = [
@@ -217,8 +217,9 @@ Dataset.from_list(MATH_SAMPLES).save_to_disk(str(dataset_dir))
 reloaded = get_custom_dataset(path=str(dataset_dir), type="rl")
 
 assert len(reloaded) == 3
-assert reloaded[0]["messages"] == MATH_SAMPLES[0]["messages"]
-assert reloaded[0]["answer"] == MATH_SAMPLES[0]["answer"]
+for observed, expected in zip(reloaded, MATH_SAMPLES, strict=True):
+    assert observed["messages"] == expected["messages"]
+    assert observed["answer"] == expected["answer"]
 print("columns =", reloaded.column_names)
 print("len     =", len(reloaded))
 ```
@@ -234,20 +235,19 @@ len     = 3
 有两点值得注意
 
 第一，那条 WARNING 是预期行为。直接传 `path` 与 `type` 关键字参数会走到没有 `dataset_config`
-对象的分支，加载器记录一条警告后照常工作；在真实训练配置中您会设置 `train_dataset.path` 与
-`train_dataset.type`，不会看到它
+对象的分支，加载器记录一条警告后照常工作；在真实训练配置中您会设置 `train_dataset.path` 与 `train_dataset.type`，不会看到它
 
 第二，目录名会影响分发。加载器按路径中的子串选择 adapter，包括 `gsm8k`、`geometry3k`、
-`clevr_count_70k`、`virl39k`、`hh-rlhf`、`torl_data`、`dapo-math-17k`，以及作为路径片段出现的
-`swe`；一个叫 `my-gsm8k-copy` 的目录会被交给 GSM8K adapter 然后失败——它期望的是 Hub
-上的数据集名，而不是本地目录。示例中的 `math-rl-demo` 是刻意取的中性名字
+`clevr_count_70k`、`virl39k`、`hh-rlhf`、`torl_data`、`dapo-math-17k`，以及作为路径片段出现的 `swe`；一个叫
+`my-gsm8k-copy` 的目录会被交给 GSM8K adapter 然后失败——它期望的是 Hub 上的数据集名，而不是本地目录。示例中的 `math-rl-demo`
+是刻意取的中性名字
 
-同样重要的是：通用加载路径返回的正是保存时的原始记录，它不做分词，也不应用 `max_length`；这两件事都属于内置
-adapter 的行为。如果需要其中任何一项，请在保存前自行处理，或者参照前几节实现一个 adapter
+同样重要的是：通用加载路径返回的正是保存时的原始记录，它不做分词，也不应用 `max_length`；这两件事都属于内置 adapter
+的行为。如果需要其中任何一项，请在保存前自行处理，或者参照前几节实现一个 adapter
 
 至于数据如何进入训练：`RLVRWorkflow` 把 `data["messages"]` 交给 `apply_chat_template`
-构造提示，整行记录则以关键字参数展开传给奖励函数。正因如此，`answer`
-会以同名参数抵达 GSM8K 奖励函数，在那里与模型输出比对；它从不参与分词，也不会喂给模型，您新增的任何字段都会以同样的方式抵达
+构造提示，整行记录则以关键字参数展开传给奖励函数。正因如此，`answer` 会以同名参数抵达 GSM8K
+奖励函数，在那里与模型输出比对；它从不参与分词，也不会喂给模型，您新增的任何字段都会以同样的方式抵达
 
 ## 校验已准备好的数据
 
@@ -275,11 +275,10 @@ python -m areal.dataset.validate samples.jsonl --profile text-rl --max-errors 5
 | `--require-field` | 额外要求该字段存在；可重复（例如 `answer`）                 |
 | `--max-length`    | 拒绝超过 N 个 token 的 `tokenized-sft` 记录，仅限该 profile |
 | `--max-errors`    | 限制打印多少条诊断（默认 20）                               |
-| `--report`        | 把完整结果写成 JSON                                         |
+| `--report`        | 写入新的 JSON 文件，不写进源数据集目录或覆盖已有文件        |
 
-退出码 0 表示每一行都可用；1 表示至少有一行非法或输入为空；2
-表示校验器根本读不了输入——路径写错、缺少指定的 split，或 `--report` 的目标路径不可写。诊断信息会指明位置与字段，例如
-`line 7: messages[1].role [unsupported_role] ...`
+退出码 0 表示每一行都可用；1 表示至少有一行非法或输入为空；2 表示校验器根本读不了输入——路径写错、缺少指定的 split，或 `--report`
+的目标路径不可写。诊断信息会指明位置与字段，例如 `line 7: messages[1].role [unsupported_role] ...`
 
 ## 划分训练集与验证集
 
@@ -311,6 +310,8 @@ except ValueError as exc:
     message = str(exc)
     assert "test" in message
     assert "train" in message and "validation" in message
+else:
+    raise AssertionError("不存在的 split 应抛出 ValueError")
 ```
 
 ```text
